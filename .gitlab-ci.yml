@@ -1,0 +1,76 @@
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR"
+  MAVEN_CLI_OPTS: >-
+    --settings $MAVEN_SETTINGS
+    --batch-mode
+
+cache:
+  paths:
+    - .m2/repository
+
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  tags:
+    - Test-Docker-Runner
+  image: nexus.ooredoo.com.kw:9443/maven:3.8-openjdk-17
+  script:
+    - mvn $MAVEN_CLI_OPTS clean install -Dmaven.test.skip=true
+    - echo "Build Completed"
+  artifacts:
+    paths:
+      - target/
+
+deploy_SIT:
+  only:
+    - sit
+  tags:
+    - CI-Test_Runner
+  stage: deploy
+  environment:
+    name: SIT
+  script:
+    - ssh -o StrictHostKeyChecking=no -T runner@10.192.220.36 "chmod 755 /home/runner && mkdir -p /home/runner/deployment && rm -rf /home/runner/deployment/*" || exit 1
+    - scp target/*.jar runner@10.192.220.36:/home/runner/deployment/
+    - >
+      ssh -o StrictHostKeyChecking=no -T runner@10.192.220.36 <<EOF
+        set -e
+        chmod -R 777 /home/runner/deployment && sudo chown evamadmin:evamadmin /home/runner/deployment/*
+        echo "Starting deployment..."
+        # Stop
+        #sudo -u evamadmin sh /opt/evam/smsccustomcom/bin/smsccustomcom stop
+        # Backup
+        #sudo -u evamadmin mv /opt/evam/smsccustomcom/corelib/smsccustomcom-8.2.0.jar /opt/evam/smsccustomcom/backup/
+        # Deploy
+        #sudo -u evamadmin mv /home/runner/deployment/smsccustomcom-8.2.0.jar /opt/evam/smsccustomcom/corelib/
+        # Start
+        #sudo -u evamadmin sh /opt/evam/smsccustomcom/bin/smsccustomcom start
+      EOF
+deploy_PROD_1:
+  only:
+    - main
+  tags:
+    - CI-Prod_Runner
+  stage: deploy
+  environment:
+    name: Production
+  script:
+    - ssh -o StrictHostKeyChecking=no -T runner@10.196.216.62 "chmod 755 /home/runner && mkdir -p /home/runner/deployment && rm -rf /home/runner/deployment/*" || exit 1
+    - scp target/*.zip runner@10.196.216.62:/home/runner/deployment/
+    - >
+      ssh -o StrictHostKeyChecking=no -T runner@10.196.216.62 <<EOF
+        set -e
+        chmod -R 777 /home/runner/deployment && sudo chown evamadmin:evamadmin /home/runner/deployment/*
+        echo "Starting deployment..."
+        # Stop
+        #sudo -u evamadmin sh /opt/evam/smsccustomcom/bin/smsccustomcom stop
+        # Backup
+        #sudo -u evamadmin mv /opt/evam/smsccustomcom/corelib/smsccustomcom-8.2.0.jar /opt/evam/smsccustomcom/backup/
+        # Deploy
+        #sudo -u evamadmin mv /home/runner/deployment/smsccustomcom-8.2.0.jar /opt/evam/smsccustomcom/corelib/
+        # Start
+        #sudo -u evamadmin sh /opt/evam/smsccustomcom/bin/smsccustomcom start
+      EOF

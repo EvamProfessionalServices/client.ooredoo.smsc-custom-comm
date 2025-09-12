@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration monitorInterval="30" shutdownHook="disable">
+    <Properties>
+        <Property name="log-path">${sys:user.dir}/logs</Property>
+        <Property name="archive-log-path">${log-path}/archive</Property>
+        <Property name="log-name">evam-marketing-communication-template</Property>
+    </Properties>
+    <Appenders>
+        <Console name="Console-Appender" target="SYSTEM_OUT">
+            <PatternLayout>
+                <pattern>[%-5level] %d{dd/MM/yyyy HH:mm:ss.SSS} [%t] [%M] %clr{%-20.70c} - %msg%n</pattern>
+            </PatternLayout>
+        </Console>
+        <RollingFile name="RollingFile" fileName="${log-path}/${log-name}.log"
+                     filePattern="${archive-log-path}/${log-name}.%d{yyyy-MM-dd}_%i.log.gz">
+            <PatternLayout>
+                <pattern>[%-5level] %d{dd/MM/yyyy HH:mm:ss.SSS} [%t] [%M] %clr{%-20.70c} - %msg%n</pattern>
+            </PatternLayout>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true" />
+                <SizeBasedTriggeringPolicy size="1GB"/>
+            </Policies>
+        </RollingFile>
+    </Appenders>
+    <Loggers>
+        <Logger name="io.lettuce.core" level="WARN"/>
+        <Logger name="io.netty" level="WARN"/>
+        <Logger name="com.zaxxer" level="WARN"/>
+        <Logger name="reactor.netty" level="WARN"/>
+        <Logger name="org.hibernate" level="WARN"/>
+        <Logger name="org.springframework" level="INFO"/>
+
+        <Logger name="com.evam.marketing" level="INFO"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="RollingFile"/>
+        </Root>
+    </Loggers>
+</Configuration>
