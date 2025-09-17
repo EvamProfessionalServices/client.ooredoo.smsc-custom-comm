@@ -1,5 +1,8 @@
 package com.evam.marketing.communication.template.service.integration;
 
+import com.evam.marketing.communication.template.cacheserver.CacheQueryService;
+import com.evam.marketing.communication.template.cacheserver.DTO.CustomerDetails;
+import com.evam.marketing.communication.template.cacheserver.DTO.ScenarioMetaParams;
 import com.evam.marketing.communication.template.configuration.PersistentConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +13,9 @@ import org.springframework.stereotype.Service;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Slf4j
@@ -26,9 +32,12 @@ public class Reporting {
     private static final String CONTACT_POLICY = "CONTACT_POLICY";
     private static final String SUCCESS = "SUCCESS";
     private static final String REJECTED = "REJECTED";
+    private static final String EMPTY_STRING = "";
+    private final CacheQueryService cacheQueryService;
 
-    public Reporting(PersistentConfig persistentConfig) {
+    public Reporting(PersistentConfig persistentConfig, CacheQueryService cacheQueryService) {
         this.persistentConfig = persistentConfig;
+        this.cacheQueryService = cacheQueryService;
     }
 
     public void saveToDatabase(List<ServiceRequest> requests, String status) {
@@ -49,6 +58,30 @@ public class Reporting {
 
     public void setPs(PreparedStatement ps, ServiceRequest request, String status) {
         try {
+            CustomerDetails customerDetails = cacheQueryService.getCustomerDetails(request.getBase().getActorId());
+            String contractId = customerDetails != null ? customerDetails.getContractid() : EMPTY_STRING;
+            String customerType = customerDetails != null ? customerDetails.getCustomertype() : EMPTY_STRING;
+            String tgCgFlag = customerDetails != null ? "1".equals(customerDetails.getUcgflag()) ? "0" : "1" : EMPTY_STRING;
+            String businessSubGroup = customerDetails != null ? customerDetails.getCustomertype() : EMPTY_STRING;
+            ScenarioMetaParams scenarioMetaParams = cacheQueryService.getScenarioMetaParams(request.getBase().getScenarioName());
+            String altContactNumber = scenarioMetaParams != null ? "PREPAIDCVM".equals(scenarioMetaParams.getBUSINESS_GROUP())
+                    ? customerDetails.getMsisdnalt0() : customerDetails.getMsisdn_cont_base_ls() : EMPTY_STRING;
+            String camId = scenarioMetaParams != null ? scenarioMetaParams.getMAIN_CAMPAIGN_NAME() + "_" + scenarioMetaParams.getVERSION() : EMPTY_STRING;
+            LocalDate now = LocalDate.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+            String currentDate = now.format(formatter);
+            String usecaseTreatmentCode = scenarioMetaParams != null ? scenarioMetaParams.getMAIN_CAMPAIGN_NAME() + "_" + scenarioMetaParams.getVERSION() + "_" +
+                    request.getComputed().getSegmentName() + "_1_" + currentDate : EMPTY_STRING;
+            String eventName = scenarioMetaParams != null ? scenarioMetaParams.getMAIN_CAMPAIGN_NAME() + "_EVT" : EMPTY_STRING;
+            String direction = scenarioMetaParams != null ? scenarioMetaParams.getDIRECTION() : "";
+            String businessGroup = scenarioMetaParams != null ? scenarioMetaParams.getBUSINESS_GROUP() : "";
+            String campaignObjective = scenarioMetaParams != null ? scenarioMetaParams.getCAMPAIGN_OBJECTIVE() : "";
+            String campaignType = scenarioMetaParams != null ? scenarioMetaParams.getCAMPAIGN_TYPE() : "";
+            String offerStartDate = currentDate;
+            LocalDate offerExpiryDate = now.plusDays(Long.parseLong(scenarioMetaParams.getEXIT_AFTER_DAY()));
+            String offerEndDate = offerExpiryDate.format(formatter);
+            String mainCampaignName = scenarioMetaParams != null ? scenarioMetaParams.getMAIN_CAMPAIGN_NAME() : "";
+
             String message = "";
             switch (request.getComputed().getLanguagePreference()){
                 case ENG: message = request.getComputed().getTextEng(); break;
@@ -56,7 +89,7 @@ public class Reporting {
                 case ENG_AR: message = request.getComputed().getTextMixed(); break;
             }
             ps.setString(1, request.getBase().getActorId());
-            ps.setString(2, request.getComputed().getContractId());
+            ps.setString(2, contractId);
             ps.setString(3, request.getComputed().getLanguagePreference());
             ps.setString(4, message);
             ps.setString(5,request.getComputed().getSenderId());
@@ -66,56 +99,38 @@ public class Reporting {
                 ps.setString(6, String.valueOf(request.getComputed().isTestModeEnabled()));
             }
             ps.setString(7, String.valueOf(request.getComputed().isFlashSmsEnabled()));
-            ps.setString(8, request.getComputed().getCamId());
+            ps.setString(8, camId);
             ps.setString(9, request.getBase().getScenarioName());
             ps.setString(10, request.getComputed().getSegmentName());
             ps.setString(11, request.getComputed().getTransactionId());
             ps.setString(12, request.getComputed().getTreatmentName());
-            ps.setString(13, request.getComputed().getTreatmentId());
+            ps.setString(13, "1");
             ps.setString(14, request.getComputed().getOfferName());
-            ps.setString(15, request.getComputed().getOfferId());
-            ps.setString(16, request.getComputed().getUsercaseTreatmentCode());
+            ps.setString(15, "1");
+            ps.setString(16, usecaseTreatmentCode);
             ps.setString(17, request.getBase().getCommunication_uuid());
             ps.setString(18, request.getComputed().getTreatmentCode());
             ps.setString(19, request.getBase().getCommunication_name());
             ps.setString(20, request.getComputed().getMessageType());
-            ps.setString(21, request.getComputed().getCustomerType());
+            ps.setString(21, customerType);
             ps.setLong(22, request.getMessageId() == null || request.getMessageId().isEmpty() ? 0L : Long.parseLong(request.getMessageId()));
-            ps.setString(23, request.getComputed().getEventName());
+            ps.setString(23, eventName);
             ps.setString(24, request.getComputed().getMappingName());
             ps.setDouble(25, request.getComputed().getPrice() == null || request.getComputed().getPrice().isEmpty() ? 0 : Double.parseDouble(request.getComputed().getPrice()));
             ps.setString(26, request.getComputed().getOfferCategory());
-            ps.setInt(27, request.getComputed().getTgCgFlag() == null || request.getComputed().getTgCgFlag().isEmpty() ? 0 : Integer.parseInt(request.getComputed().getTgCgFlag()));
-            ps.setString(28, request.getComputed().getDirection());
-            ps.setString(29, request.getComputed().getBusinessGroup());
-            ps.setString(30, request.getComputed().getBusinessSubGroup());
-            ps.setString(31, request.getComputed().getCampaignObjective());
-            ps.setString(32, request.getComputed().getCampaignType());
+            ps.setInt(27, Integer.parseInt(tgCgFlag));
+            ps.setString(28, direction);
+            ps.setString(29, businessGroup);
+            ps.setString(30, businessSubGroup);
+            ps.setString(31, campaignObjective);
+            ps.setString(32, campaignType);
             ps.setString(33, request.getComputed().getOfferType());
             //SET NULL IF DATE IS NOT VALID
-            try {
-                Timestamp startDate = Timestamp.valueOf(request.getComputed().getOfferStartDate());
-            }catch (Exception e){
-                request.getComputed().setOfferStartDate(null);
-            }
-            if(request.getComputed().getOfferStartDate() == null || request.getComputed().getOfferStartDate().isEmpty()){
-                ps.setNull(34,java.sql.Types.TIMESTAMP);
-            }else {
-                ps.setTimestamp(34, Timestamp.valueOf(request.getComputed().getOfferStartDate()));
-            }
+            ps.setDate(34, java.sql.Date.valueOf(LocalDate.parse(offerStartDate, formatter)));
             //SET NULL IF DATE IS NOT VALID
-            try {
-                Timestamp endDate = Timestamp.valueOf(request.getComputed().getOfferEndDate());
-            }catch (Exception e){
-                request.getComputed().setOfferEndDate(null);
-            }
-            if(request.getComputed().getOfferEndDate() == null || request.getComputed().getOfferEndDate().isEmpty()){
-                ps.setNull(35,java.sql.Types.TIMESTAMP);
-            }else {
-                ps.setTimestamp(35, Timestamp.valueOf(request.getComputed().getOfferEndDate()));
-            }
-            ps.setString(36, request.getComputed().getAltContactNumber());
-            ps.setString(37, request.getComputed().getMainCampaignName() == null ? "" : request.getComputed().getMainCampaignName());
+            ps.setDate(35, java.sql.Date.valueOf(LocalDate.parse(offerEndDate, formatter)));
+            ps.setString(36, altContactNumber);
+            ps.setString(37, mainCampaignName);
             if(request.getComputed().isControlGroup()){
                 ps.setString(38, CONTROL_GROUP);
             }else{

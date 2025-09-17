@@ -122,3 +122,5 @@ eec:
   pool-cache-name: OOREDOO_CUSTOM_CONTACT_POLICY
   trx-daily-cache: OOREDOO_CUSTOM_CP_TRANSACTION_DAILY
   trx-hist-cache: OOREDOO_CUSTOM_CP_TRANSACTION_HIST
+  customer-detail-cache: CUSTOM_CUSTOMER_DETAILS
+  scenario-meta-params-cache: SCENARIO_META_PARAMETERS

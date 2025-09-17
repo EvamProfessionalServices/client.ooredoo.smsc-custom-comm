@@ -1,0 +1,35 @@
+{
+  "p2pEnabled": false,
+  "clientMode": true,
+  "pubPoolSize": 5,
+  "sysPoolSize": 5,
+  "igniteInstanceName": "cache-server",
+  "discoSpi": {
+    "type": "TcpDiscoverySpi",
+    "ipFinder": {
+      "type": "TcpDiscoveryVmIpFinder",
+      "addrs": [
+        "172.19.166.12:17500",
+        "172.19.166.12:17501"
+      ]
+    },
+    "locPort": 17500,
+    "locPortRange": 100,
+    "forceSrvMode": false,
+    "reconCnt": 2147483647,
+    "ackTimeout": 5000,
+    "sockTimeout": 5000,
+    "joinTimeout": 0,
+    "clientReconnectDisabled": false
+  },
+  "commSpi": {
+    "type": "TcpCommunicationSpi",
+    "locPort": 17600,
+    "locPortRange": 200,
+    "msgQueueLimit": 1024,
+    "slowClientQueueLimit": 1024,
+    "sockWriteTimeout": 10000,
+    "connectTimeout": 10000,
+    "connectionsPerNode": 10
+  }
+}
