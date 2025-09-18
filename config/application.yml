@@ -108,7 +108,7 @@ persister:
   time-stamp-format-postgres: yyyy-MM-dd HH:mm:ss
   oracle-schema-name: PMP_EVAM
   postgresql-schema-name: evam
-  insertSql:  "insert into ooredoo_custom_sms_reporting (msisdn, contract_id, languagepreference, message_text, senderid, testmodeenabled, flashsmsenabled, cam_id, campaign_name, segment_name, transaction_id, treatment_name, treatment_id, offer_name, offer_id, usecase_treatment_code, ref_transaction_id, treatment_code, template_name, message_type, customer_type, message_id, event_name, mapping_name, price, offer_category, tg_cg_flag, direction, business_group, business_subgroup, campaign_objective, campaign_type, offer_type, offer_start_date, offer_end_date, alt_contact_number, main_campaign_name, delivery_status) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  insertSql:  "insert into ooredoo_custom_sms_reporting (msisdn, contract_id, languagepreference, message_text, senderid, testmodeenabled, flashsmsenabled, cam_id, campaign_name, segment_name, transaction_id, treatment_name, treatment_id, offer_name, offer_id, usecase_treatment_code, ref_transaction_id, treatment_code, template_name, message_type, customer_type, message_id, event_name, mapping_name, price, offer_category, tg_cg_flag, direction, business_group, business_subgroup, campaign_objective, campaign_type, offer_type, offer_start_date, offer_end_date, alt_contact_number, main_campaign_name, delivery_status, reason_detail) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 smpp:
   host: 10.192.254.15
   port: 6693

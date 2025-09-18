@@ -10,7 +10,8 @@ import com.evam.cache.model.CacheValue;
 import com.evam.marketing.communication.template.cacheserver.DTO.CustomerDetails;
 import com.evam.marketing.communication.template.cacheserver.DTO.ScenarioMetaParams;
 import com.evam.marketing.communication.template.service.client.model.CustomCommunicationRequest;
-import com.evam.marketing.communication.template.service.client.model.Parameter;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -26,17 +27,10 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
-import java.util.LinkedHashMap;
-
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Predicate;
-
 
 @Service
 @Slf4j
@@ -65,11 +59,16 @@ public class CacheQueryService {
     @Value("${eec.scenario-meta-params-cache}")
     private String scenarioMetaParamsCacheName;
 
-    @Value("${eec.ignite-client-file-path}")   private String igniteClientFilePath;
-    @Value("${eec.app-token}")  private String eecAppToken;
+    @Value("${eec.ignite-client-file-path}")
+    private String igniteClientFilePath;
+    @Value("${eec.app-token}")
+    private String eecAppToken;
 
-
-    private int sumTransactionValues(List<Map<String, Object>> transactions, Predicate<Map<String, Object>> filter, String key) {
+    /**
+     * Belirtilen filtreye göre transaction verilerindeki ilgili alanları toplar.
+     * EecCacheGetCommunicationClient tarafından kullanılabilmesi için 'public' yapıldı.
+     */
+    public int sumTransactionValues(List<Map<String, Object>> transactions, Predicate<Map<String, Object>> filter, String key) {
         if (transactions == null || transactions.isEmpty()) {
             return 0;
         }
@@ -79,122 +78,25 @@ public class CacheQueryService {
                 .sum();
     }
 
-    public ContactPolicyLimits getLimitsAndUsageForLevel(CacheKey limitsKey,
-                                                         List<Map<String, Object>> dailyTransactions,
-                                                         List<Map<String, Object>> histTransactions,
-                                                         Predicate<Map<String, Object>> filter) {
+    /**
+     * EecCacheGetCommunicationClient'ın hiyerarşik kural araması için gereken yardımcı metod.
+     * Belirtilen anahtara ait policy değerlerini döner.
+     */
+    public List<String> getPolicyValues(CacheKey key) {
         try {
-            CacheValue limitValue = contactPolicyCache.get(limitsKey);
-            if (limitValue == null) {
-                return new ContactPolicyLimits(0, 0, 0, 0, 0, 0);
+            CacheValue value = contactPolicyCache.get(key);
+            if (value != null && value.getValues() != null && value.getValues().length > 0) {
+                return Arrays.asList(value.getValues());
             }
-
-            List<String> limits = Arrays.asList(limitValue.getValues());
-            int dailyLimit = Integer.parseInt(limits.get(1));
-            int weeklyLimit = Integer.parseInt(limits.get(2));
-            int monthlyLimit = Integer.parseInt(limits.get(3));
-
-            int dailyCount = sumTransactionValues(dailyTransactions, filter, "SENT_COUNT");
-            int weeklySum = sumTransactionValues(histTransactions, filter, "WEEKLY_SUM");
-            int monthlySum = sumTransactionValues(histTransactions, filter, "MONTHLY_SUM");
-
-            return new ContactPolicyLimits(dailyLimit, weeklyLimit, monthlyLimit, dailyCount, weeklySum, monthlySum);
-
         } catch (Exception e) {
-            log.error("Error getting limits and usage for key: {}", limitsKey, e);
-            return null; // Kritik bir hata durumunda null dön.
+            log.error("Error getting policy values for key: {}", key, e);
         }
+        return null; // Bulunamazsa veya hata olursa null dön.
     }
 
-/*    public ContactPolicyLimits getCacheValues(CustomCommunicationRequest req, Map<String, String> requiredFields) {
-        CacheKey cacheKey = new CacheKey(req.getActorId(), "SMS", requiredFields.get("messageType"));
-        List<String> limits = Collections.emptyList();
-        CacheKey cacheKeyTrx = new CacheKey(req.getActorId());
-
-        int dailyCount = 0;
-        int weeklySum = 0;
-        int monthlySum = 0;
-
-        try {
-            limits = Arrays.asList(contactPolicyCache.get(cacheKey).getValues());
-        } catch (Exception e) {
-            log.error("Cache read error for limits key: {}", cacheKey, e);
-            return null;
-        }
-
-        try {
-            CacheValue dailyCacheValue = trxDailyCache.get(cacheKeyTrx);
-
-            if (dailyCacheValue != null && dailyCacheValue.getValues().length > 0) {
-                String dailyTransactionsJson = dailyCacheValue.getValues()[0];
-                // JSON boş bir string değilse devam et.
-                if (dailyTransactionsJson != null && !dailyTransactionsJson.isEmpty()) {
-                    ObjectMapper objectMapper = new ObjectMapper();
-                    JsonNode rootNode = objectMapper.readTree(dailyTransactionsJson);
-
-                    if (rootNode.isArray()) {
-                        String requiredMessageType = requiredFields.get("messageType");
-                        for (JsonNode node : rootNode) {
-                            String channel = node.path("CHANNEL").asText();
-                            String messageType = node.path("MESSAGE_TYPE").asText();
-
-                            if ("SMS".equals(channel) && requiredMessageType.equals(messageType)) {
-                                dailyCount = node.path("SENT_COUNT").asInt();
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Cache read or JSON parse error for dailyTransactions key: {}", cacheKeyTrx, e);
-        }
-
-        try {
-            CacheValue histCacheValue = trxHistCache.get(cacheKeyTrx);
-
-            if (histCacheValue != null && histCacheValue.getValues().length > 0) {
-                String histTransactionsJson = histCacheValue.getValues()[0];
-                if (histTransactionsJson != null && !histTransactionsJson.isEmpty()) {
-                    ObjectMapper objectMapper = new ObjectMapper();
-                    JsonNode rootNode = objectMapper.readTree(histTransactionsJson);
-
-                    if (rootNode.isArray()) {
-                        String requiredMessageType = requiredFields.get("messageType");
-                        for (JsonNode node : rootNode) {
-                            String channel = node.path("CHANNEL").asText();
-                            String messageType = node.path("MESSAGE_TYPE").asText();
-
-                            if ("SMS".equals(channel) && requiredMessageType.equals(messageType)) {
-                                weeklySum = node.path("WEEKLY_SUM").asInt();
-                                monthlySum = node.path("MONTHLY_SUM").asInt();
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Cache read or JSON parse error for histTransactions key: {}", cacheKeyTrx, e);
-        }
-
-        try {
-            ContactPolicyLimits contactPolicyLimits = new ContactPolicyLimits(
-                    Integer.valueOf(limits.get(1)),
-                    Integer.valueOf(limits.get(2)),
-                    Integer.valueOf(limits.get(3)),
-                    dailyCount,
-                    weeklySum,
-                    monthlySum);
-            return contactPolicyLimits;
-        } catch (Exception e) {
-            log.error("Conversion error for contactPolicyLimits key: {}", cacheKey, e);
-            return null;
-        }
-    }
-
- */
-
+    /**
+     * Kota kontrolü başarılı olduğunda transaction cache'ini güncelleyen metod.
+     */
     public void putCacheValue(CustomCommunicationRequest req, Map<String, String> requiredFields, String updatedDailySum) {
         try {
             CacheKey cacheKey = new CacheKey(req.getActorId());
@@ -203,11 +105,12 @@ public class CacheQueryService {
             CacheValue existingValue = trxDailyCache.get(cacheKey);
             List<Map<String, Object>> transactionsList;
 
-            if (existingValue == null || existingValue.getValues()[0].isEmpty()) {
+            if (existingValue == null || existingValue.getValues().length == 0 || existingValue.getValues()[0].isEmpty()) {
                 transactionsList = new ArrayList<>();
             } else {
                 String jsonString = existingValue.getValues()[0];
-                transactionsList = objectMapper.readValue(jsonString, new TypeReference<List<Map<String, Object>>>() {});
+                transactionsList = objectMapper.readValue(jsonString, new TypeReference<List<Map<String, Object>>>() {
+                });
             }
 
             String requiredMessageType = requiredFields.get("messageType");
@@ -226,11 +129,9 @@ public class CacheQueryService {
 
             if (!entryFoundAndUpdated) {
                 Map<String, Object> newTransaction = new LinkedHashMap<>();
-
                 newTransaction.put("CHANNEL", "SMS");
                 newTransaction.put("MESSAGE_TYPE", requiredMessageType);
                 newTransaction.put("SENT_COUNT", Integer.valueOf(updatedDailySum));
-
                 transactionsList.add(newTransaction);
             }
 
@@ -244,18 +145,56 @@ public class CacheQueryService {
         }
     }
 
+    public CustomerDetails getCustomerDetails(String actorId) {
+        if (StringUtils.isEmpty(actorId)) {
+            return null;
+        }
+        try {
+            CacheKey cacheKey = new CacheKey(actorId);
+            CacheValue cacheValue = customerDetailsCache.get(cacheKey);
+            if (cacheValue == null || cacheValue.getValues().length == 0) {
+                return null;
+            }
+            String[] values = cacheValue.getValues();
+            if (values.length < 5) { // Assuming 5 fields are expected based on constructor
+                log.warn("Incomplete customer details for actorId: {}", actorId);
+                return null;
+            }
+            return new CustomerDetails(values[0], values[1], values[2], values[3], values[4]);
+        } catch (Exception e) {
+            log.error("Error retrieving customer details for actorId: {}", actorId, e);
+            return null;
+        }
+    }
+
+    public ScenarioMetaParams getScenarioMetaParams(String scenarioName) {
+        if (StringUtils.isEmpty(scenarioName)) {
+            return null;
+        }
+        try {
+            CacheKey cacheKey = new CacheKey(scenarioName);
+            CacheValue cacheValue = scenarioMetaParamsCache.get(cacheKey);
+            if (cacheValue == null || cacheValue.getValues().length == 0) {
+                return null;
+            }
+            String[] values = cacheValue.getValues();
+            if (values.length < 10) {
+                log.warn("Incomplete scenario meta params for scenarioName: {}", scenarioName);
+                return null;
+            }
+            return new ScenarioMetaParams(values[0], values[1], values[2], values[3], values[4],
+                    values[5], values[6], values[7], values[8], values[9]);
+        } catch (Exception e) {
+            log.error("Error retrieving scenario meta params for scenarioName: {}", scenarioName, e);
+            return null;
+        }
+    }
 
     private Ignite getIgnite() throws IOException {
         do {
             IgniteConfiguration igniteConfiguration = getIgniteConfiguration();
             try {
                 ignite = Ignition.getOrStart(igniteConfiguration);
-                /*
-                 * WARNING!!! do not export to variable in order not to instantiate once
-                 * of igniteConfiguration. Ignore CAST Errors. Because it prevents error
-                 * "SPI has already been started (always create new configuration instance
-                 * for each starting Ignite instances)"
-                 */
                 break;
             } catch (IgniteException e) {
                 log.error("EEC connection can not be established. Since EEC connection configured " +
@@ -296,53 +235,6 @@ public class CacheQueryService {
             return configuration;
         }
     }
-
-    public CustomerDetails getCustomerDetails(String actorId) {
-        if (StringUtils.isEmpty(actorId)) {
-            return null;
-        }
-        try {
-            CacheKey cacheKey = new CacheKey(actorId);
-            CacheValue cacheValue = customerDetailsCache.get(cacheKey);
-            if (cacheValue == null || cacheValue.getValues().length == 0) {
-                return null;
-            }
-            String[] values = cacheValue.getValues();
-            if (values.length < 3) {
-                log.warn("Incomplete customer details for actorId: {}", actorId);
-                return null;
-            }
-            return new CustomerDetails(values[0], values[1], values[2], values[3], values[4]);
-        } catch (Exception e) {
-            log.error("Error retrieving customer details for actorId: {}", actorId, e);
-            return null;
-        }
-    }
-
-
-    public ScenarioMetaParams getScenarioMetaParams(String scenarioName) {
-        if (StringUtils.isEmpty(scenarioName)) {
-            return null;
-        }
-        try {
-            CacheKey cacheKey = new CacheKey(scenarioName);
-            CacheValue cacheValue = scenarioMetaParamsCache.get(cacheKey);
-            if (cacheValue == null || cacheValue.getValues().length == 0) {
-                return null;
-            }
-            String[] values = cacheValue.getValues();
-            if (values.length < 10) {
-                log.warn("Incomplete scenario meta params for scenarioName: {}", scenarioName);
-                return null;
-            }
-            return new ScenarioMetaParams(values[0], values[1], values[2], values[3], values[4],
-                    values[5], values[6], values[7], values[8], values[9]);
-        } catch (Exception e) {
-            log.error("Error retrieving scenario meta params for scenarioName: {}", scenarioName, e);
-            return null;
-        }
-    }
-
 
     @PostConstruct
     private void init() throws Exception {

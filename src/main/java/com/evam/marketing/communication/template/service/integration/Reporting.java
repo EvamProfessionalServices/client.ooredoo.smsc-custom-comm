@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -78,8 +79,11 @@ public class Reporting {
             String campaignObjective = scenarioMetaParams != null ? scenarioMetaParams.getCAMPAIGN_OBJECTIVE() : "";
             String campaignType = scenarioMetaParams != null ? scenarioMetaParams.getCAMPAIGN_TYPE() : "";
             String offerStartDate = currentDate;
-            LocalDate offerExpiryDate = now.plusDays(Long.parseLong(scenarioMetaParams.getEXIT_AFTER_DAY()));
-            String offerEndDate = offerExpiryDate.format(formatter);
+            String offerEndDate = null;
+            if(scenarioMetaParams != null && scenarioMetaParams.getEXIT_AFTER_DAY() != null) {
+                LocalDate offerExpiryDate = now.plusDays(Long.parseLong(scenarioMetaParams.getEXIT_AFTER_DAY()));
+                offerEndDate = offerExpiryDate.format(formatter);
+            }
             String mainCampaignName = scenarioMetaParams != null ? scenarioMetaParams.getMAIN_CAMPAIGN_NAME() : "";
 
             String message = "";
@@ -128,7 +132,11 @@ public class Reporting {
             //SET NULL IF DATE IS NOT VALID
             ps.setDate(34, java.sql.Date.valueOf(LocalDate.parse(offerStartDate, formatter)));
             //SET NULL IF DATE IS NOT VALID
-            ps.setDate(35, java.sql.Date.valueOf(LocalDate.parse(offerEndDate, formatter)));
+            if(offerEndDate != null) {
+                ps.setDate(35, java.sql.Date.valueOf(LocalDate.parse(offerEndDate, formatter)));
+            }else{
+                ps.setNull(35, Types.DATE);
+            }
             ps.setString(36, altContactNumber);
             ps.setString(37, mainCampaignName);
             if(request.getComputed().isControlGroup()){
@@ -137,13 +145,56 @@ public class Reporting {
                 ps.setNull(38, java.sql.Types.VARCHAR);
             }
             ps.setString(39, QUOTA_EXCEEDED.equals(status) ? REJECTED : status);
-            if(SUCCESS.equals(status)){
-                ps.setNull(40,java.sql.Types.VARCHAR);
-            }else {
-                ps.setString(40, request.getComputed().isControlGroup() ? CONTROL_GROUP : CONTACT_POLICY);
+            if (SUCCESS.equals(status)) {
+                // Başarılıysa, her iki neden kolonu da null olmalı.
+                ps.setNull(40, java.sql.Types.VARCHAR); // REASON
+                ps.setNull(41, java.sql.Types.VARCHAR); // REASON_DETAIL
+
+            } else {
+                // Başarısız durumlar için...
+                String quotaCheck = request.getComputed().getQuotaCheck();
+
+                if ("PROPER_TIME".equals(quotaCheck)) {
+                    // KURAL: Proper Time durumu
+                    // REASON = PROPER_TIME (Eski davranış)
+                    ps.setString(40, "PROPER_TIME");
+                    // REASON_DETAIL = null (Yeni kural)
+                    ps.setNull(41, java.sql.Types.VARCHAR);
+
+                } else if (request.getComputed().isControlGroup()) {
+                    // KURAL: Control Group durumu (YENİ EKLENEN KONTROL)
+                    // REASON = CONTROL_GROUP (Eski davranış)
+                    ps.setString(40, CONTROL_GROUP);
+                    // REASON_DETAIL = null (Yeni kural)
+                    ps.setNull(41, java.sql.Types.VARCHAR);
+
+                } else {
+                    // KURAL: Sadece Contact Policy durumu
+                    // REASON = CONTACT_POLICY (Eski davranış)
+                    ps.setString(40, CONTACT_POLICY);
+
+                    // REASON_DETAIL = Spesifik neden (DAILY_LIMIT_EXCEEDED vb.)
+                    ps.setString(41, quotaCheck);
+                }
             }
-        }catch (SQLException e){
+        } catch (SQLException e) {
             log.error(e.getMessage());
         }
+
+//            if(SUCCESS.equals(status)){
+//                ps.setNull(40,java.sql.Types.VARCHAR);
+//            }else {
+//                // PROPER_TIME nedeniyle reject ise özel olarak işle
+//                String quotaCheck = request.getComputed().getQuotaCheck();
+//                if ("PROPER_TIME".equals(quotaCheck)) {
+//                    ps.setString(40, "PROPER_TIME");
+//                } else {
+//                    ps.setString(40, request.getComputed().isControlGroup() ? CONTROL_GROUP : CONTACT_POLICY);
+//                }
+//            }
+//        }catch (SQLException e){
+//            log.error(e.getMessage());
+//        }
     }
 }
+
