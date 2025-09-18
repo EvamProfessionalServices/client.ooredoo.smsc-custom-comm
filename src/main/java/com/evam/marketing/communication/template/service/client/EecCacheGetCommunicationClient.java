@@ -14,16 +14,16 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -31,10 +31,23 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EecCacheGetCommunicationClient extends AbstractCommunicationClient {
 
+    /**
+     * Kural verilerini, önceliğini ve ilgili filtresini bir arada tutmak için yardımcı bir iç sınıf (inner class).
+     */
+    @Getter
+    @AllArgsConstructor
+    private static class PolicyRule {
+        private int priority;
+        private List<String> limits;
+        private Predicate<Map<String, Object>> usageFilter;
+        private String policyName;
+    }
+
     private static final String PROVIDER = "SMS";
     private final HandlingService handlingService;
     private final CacheQueryService cacheQueryService;
-    private static final Set<String> REQUIRED_KEYS = Set.of("testModeEnabled", "messageType", "applyContactPolicy");
+    private static final Set<String> REQUIRED_KEYS = Set.of("testModeEnabled", "messageType", "applyContactPolicy","properStartHour","properEndHour");
+
 
     @Autowired
     public EecCacheGetCommunicationClient(KafkaProducerService kafkaProducerService,
@@ -55,139 +68,176 @@ public class EecCacheGetCommunicationClient extends AbstractCommunicationClient 
         return out;
     }
 
+    private String formatLimitLog(ContactPolicyLimits limits, String failReason) {
+        long dailyCount = limits.getDailyCount();
+        long dailyLimit = limits.getDailyLimit();
+        long weeklyTotal = dailyCount + limits.getWeeklySum();
+        long weeklyLimit = limits.getWeeklyLimit();
+        long monthlyTotal = dailyCount + limits.getMonthlySum();
+        long monthlyLimit = limits.getMonthlyLimit();
+
+        String dailyLog = "DAILY".equals(failReason)
+                ? String.format("<%d/%d>", dailyCount, dailyLimit)
+                : String.format("%d/%d", dailyCount, dailyLimit);
+
+        String weeklyLog = "WEEKLY".equals(failReason)
+                ? String.format("<%d/%d>", weeklyTotal, weeklyLimit)
+                : String.format("%d/%d", weeklyTotal, weeklyLimit);
+
+        String monthlyLog = "MONTHLY".equals(failReason)
+                ? String.format("<%d/%d>", monthlyTotal, monthlyLimit)
+                : String.format("%d/%d", monthlyTotal, monthlyLimit);
+
+        return String.format("[daily: %s, weekly: %s, monthly: %s]", dailyLog, weeklyLog, monthlyLog);
+    }
+
     @RateLimiter(name = "client-limiter")
     @NotNull
     @Override
     public CommunicationResponse send(CommunicationRequest request) {
         CustomCommunicationRequest req = (CustomCommunicationRequest) request;
         String actorId = req.getActorId();
-        String campaignName = req.getScenario();
+
+
 
         try {
-            log.debug("Checking quota requirement for scenario '{}'", campaignName);
+
             Map<String, String> requiredFields = extractRequiredFields(req);
+
+
+            if(!isNowWithin(requiredFields.get("properStartHour"),requiredFields.get("properEndHour"))){
+                req.setQuotaCheck("PROPER_TIME");
+                handlingService.handleRequest(req);
+                log.info("Current time is out of proper time range for scenario '{}'. Skipping all limit checks.", req.getScenario());
+                return generateFailCommunicationResponse(request, "Current time is out of proper time range.", "PROPER_TIME");
+            }log.info("Current time is within proper time range for scenario '{}'. Proceeding with limit checks.", req.getScenario());
 
             String applyContactPolicy = requiredFields.get("applyContactPolicy");
             if ("FALSE".equalsIgnoreCase(applyContactPolicy)) {
                 req.setQuotaCheck("OK");
                 handlingService.handleRequest(req);
-                log.info("Quota check is not required for scenario '{}'. Skipping all limit checks.", campaignName);
+                log.info("Quota check is not required for scenario '{}'. Skipping all limit checks.", req.getScenario());
                 return generateSuccessCommunicationResponse(request, "Success", "Quota check not required.");
             }
             log.info("Quota check is required (applyContactPolicy={}). Proceeding with cache limit checks.", applyContactPolicy);
 
-            if (!requiredFields.keySet().containsAll(Set.of("messageType", "applyContactPolicy"))) {
-                String missingKeys = REQUIRED_KEYS.stream().filter(k -> !requiredFields.containsKey(k)).collect(Collectors.joining(", "));
+            if (!requiredFields.containsKey("messageType")) {
                 req.setQuotaCheck("MISSING_PARAMS");
                 handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Missing required parameters: " + missingKeys, "MISSING_PARAMS");
+                return generateFailCommunicationResponse(request, "Missing required parameter: messageType", "MISSING_PARAMS");
             }
 
             String messageType = requiredFields.get("messageType");
-            CacheKey cacheKeyTrx = new CacheKey(actorId);
+            String channel = "SMS";
             ObjectMapper objectMapper = new ObjectMapper();
 
+            // 1. Transaction verilerini SADECE BİR KEZ oku
             List<Map<String, Object>> dailyTransactions = new ArrayList<>();
             List<Map<String, Object>> histTransactions = new ArrayList<>();
             try {
+                CacheKey cacheKeyTrx = new CacheKey(actorId);
                 CacheValue dailyValue = cacheQueryService.getTrxDailyCache().get(cacheKeyTrx);
                 if (dailyValue != null && dailyValue.getValues().length > 0 && dailyValue.getValues()[0] != null) {
-                    dailyTransactions = objectMapper.readValue(dailyValue.getValues()[0], new TypeReference<>() {});
+                    dailyTransactions = objectMapper.readValue(dailyValue.getValues()[0], new TypeReference<>() {
+                    });
                 }
                 CacheValue histValue = cacheQueryService.getTrxHistCache().get(cacheKeyTrx);
                 if (histValue != null && histValue.getValues().length > 0 && histValue.getValues()[0] != null) {
-                    histTransactions = objectMapper.readValue(histValue.getValues()[0], new TypeReference<>() {});
+                    histTransactions = objectMapper.readValue(histValue.getValues()[0], new TypeReference<>() {
+                    });
                 }
             } catch (Exception e) {
-                log.error("Fatal error reading transaction caches for actorId: {}. Aborting checks.", actorId, e);
                 req.setQuotaCheck("CACHE_READ_ERROR");
                 handlingService.handleRequest(req);
+                log.error("Fatal error reading transaction caches for actorId: {}. Aborting checks.", actorId, e);
                 return generateFailCommunicationResponse(request, "Could not read transaction history.", "CACHE_READ_ERROR");
             }
 
+            // 2. Dört potansiyel kural anahtarını ve filtrelerini tanımla
+            Map<CacheKey, Predicate<Map<String, Object>>> potentialRules = new LinkedHashMap<>();
+            potentialRules.put(new CacheKey(actorId, "ALL", "ALL"), tx -> true);
+            potentialRules.put(new CacheKey(actorId, channel, "ALL"), tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))));
+            potentialRules.put(new CacheKey(actorId, channel, messageType), tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))) && messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE"))));
+            potentialRules.put(new CacheKey(actorId, "ALL", messageType), tx -> messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE"))));
 
-            ContactPolicyLimits limitsAndUsage;
-
-            Predicate<Map<String, Object>> allFilter = tx -> true;
-            limitsAndUsage = cacheQueryService.getLimitsAndUsageForLevel(new CacheKey(actorId, "ALL", "ALL"), dailyTransactions, histTransactions, allFilter);
-            if (limitsAndUsage == null) {
-                req.setQuotaCheck("POLICY_CHECK_ERROR");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Error checking Actor-Level policies", "POLICY_CHECK_ERROR"); }
-
-            if (limitsAndUsage.getDailyLimit() >= 0 && limitsAndUsage.getDailyCount() >= limitsAndUsage.getDailyLimit()) {
-                req.setQuotaCheck("ACTOR_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Actor-Level Daily limit exceeded", "ACTOR_LIMIT_EXCEEDED");
-            }
-            if (limitsAndUsage.getWeeklyLimit() >= 0 && (limitsAndUsage.getDailyCount() + limitsAndUsage.getWeeklySum()) >= limitsAndUsage.getWeeklyLimit()) {
-                req.setQuotaCheck("ACTOR_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Actor-Level Weekly limit exceeded", "ACTOR_LIMIT_EXCEEDED");
-            }
-            if (limitsAndUsage.getMonthlyLimit() >= 0 && (limitsAndUsage.getDailyCount() + limitsAndUsage.getMonthlySum()) >= limitsAndUsage.getMonthlyLimit()) {
-                req.setQuotaCheck("ACTOR_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Actor-Level Monthly limit exceeded", "ACTOR_LIMIT_EXCEEDED");
+            // 3. Tüm potansiyel kuralları cache'ten çek
+            List<PolicyRule> foundPolicies = new ArrayList<>();
+            for (Map.Entry<CacheKey, Predicate<Map<String, Object>>> entry : potentialRules.entrySet()) {
+                List<String> values = cacheQueryService.getPolicyValues(entry.getKey());
+                if (values != null && !values.isEmpty()) {
+                    // Varsayım: 0. indeks PRIORITY
+                    int priority = Integer.parseInt(values.get(0));
+                    foundPolicies.add(new PolicyRule(priority, values, entry.getValue(), entry.getKey().toString()));
+                }
             }
 
-            Predicate<Map<String, Object>> smsFilter = tx -> "SMS".equals(String.valueOf(tx.get("CHANNEL")));
-            limitsAndUsage = cacheQueryService.getLimitsAndUsageForLevel(new CacheKey(actorId, "SMS", "ALL"), dailyTransactions, histTransactions, smsFilter);
-            if (limitsAndUsage == null) {
-                req.setQuotaCheck("POLICY_CHECK_ERROR");
+            // 4. En az bir kural bulunması zorunlu. Bulunamazsa hata dön.
+            if (foundPolicies.isEmpty()) {
+                req.setQuotaCheck("CONTACT_POLICY_NOT_FOUND");
                 handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Error checking Channel-Level policies", "POLICY_CHECK_ERROR"); }
-
-            if (limitsAndUsage.getDailyLimit() >= 0 && limitsAndUsage.getDailyCount() >= limitsAndUsage.getDailyLimit()) {
-                req.setQuotaCheck("CHANNEL_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Channel-Level (SMS) Daily limit exceeded", "CHANNEL_LIMIT_EXCEEDED");
-            }
-            if (limitsAndUsage.getWeeklyLimit() >= 0 && (limitsAndUsage.getDailyCount() + limitsAndUsage.getWeeklySum()) >= limitsAndUsage.getWeeklyLimit()) {
-                req.setQuotaCheck("CHANNEL_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Channel-Level (SMS) Weekly limit exceeded", "CHANNEL_LIMIT_EXCEEDED");
-            }
-            if (limitsAndUsage.getMonthlyLimit() >= 0 && (limitsAndUsage.getDailyCount() + limitsAndUsage.getMonthlySum()) >= limitsAndUsage.getMonthlyLimit()) {
-                req.setQuotaCheck("CHANNEL_LIMIT_EXCEEDED");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Channel-Level (SMS) Monthly limit exceeded", "CHANNEL_LIMIT_EXCEEDED");
+                log.error("No contact policy found for actorId {} after trying all 4 rule levels.", actorId);
+                return generateFailCommunicationResponse(request, "No contact policy defined for actor.", "CONTACT_POLICY_NOT_FOUND");
             }
 
-            Predicate<Map<String, Object>> specificFilter = tx -> "SMS".equals(String.valueOf(tx.get("CHANNEL"))) && messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE")));
-            ContactPolicyLimits specificLevelLimits = cacheQueryService.getLimitsAndUsageForLevel(new CacheKey(actorId, "SMS", messageType), dailyTransactions, histTransactions, specificFilter);
-            if (specificLevelLimits == null) {
-                req.setQuotaCheck("POLICY_CHECK_ERROR");
-                handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "Error checking MessageType-Level policies", "POLICY_CHECK_ERROR"); }
+            // 5. En düşük öncelikli kuralı seç
+            PolicyRule activePolicyRule = Collections.min(foundPolicies, Comparator.comparingInt(PolicyRule::getPriority));
+            log.info("Active policy for actorId {}: {} with priority {}", actorId, activePolicyRule.getPolicyName(), activePolicyRule.getPriority());
 
-            if (specificLevelLimits.getDailyLimit() >= 0 && specificLevelLimits.getDailyCount() >= specificLevelLimits.getDailyLimit()) {
-                req.setQuotaCheck("MESSAGETYPE_LIMIT_EXCEEDED");
+            // 6. Seçilen kurala göre gönderim toplamlarını hesapla
+            int dailyCount = cacheQueryService.sumTransactionValues(dailyTransactions, activePolicyRule.getUsageFilter(), "SENT_COUNT");
+            int weeklySum = cacheQueryService.sumTransactionValues(histTransactions, activePolicyRule.getUsageFilter(), "WEEKLY_SUM");
+            int monthlySum = cacheQueryService.sumTransactionValues(histTransactions, activePolicyRule.getUsageFilter(), "MONTHLY_SUM");
+
+            // Varsayım: 1, 2, 3. indeksler limitlerdir
+            int dailyLimit = Integer.parseInt(activePolicyRule.getLimits().get(1));
+            int weeklyLimit = Integer.parseInt(activePolicyRule.getLimits().get(2));
+            int monthlyLimit = Integer.parseInt(activePolicyRule.getLimits().get(3));
+
+            ContactPolicyLimits limitsToApply = new ContactPolicyLimits(dailyLimit, weeklyLimit, monthlyLimit, dailyCount, weeklySum, monthlySum);
+
+            // 7. Limiti kontrol et
+            if (limitsToApply.getDailyLimit() >= 0 && limitsToApply.getDailyCount() >= limitsToApply.getDailyLimit()) {
+                req.setQuotaCheck("DAILY_LIMIT_EXCEEDED");
                 handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "MessageType-Level Daily limit exceeded", "MESSAGETYPE_LIMIT_EXCEEDED");
+                String logDetails = formatLimitLog(limitsToApply, "DAILY");
+                log.warn("LIMIT EXCEEDED for actorId {}. Policy: {}. Details: {}", actorId, activePolicyRule.getPolicyName(), logDetails);
+                return generateFailCommunicationResponse(request, activePolicyRule.getPolicyName() + " Daily limit exceeded", "DAILY_LIMIT_EXCEEDED");
             }
-            if (specificLevelLimits.getWeeklyLimit() >= 0 && (specificLevelLimits.getDailyCount() + specificLevelLimits.getWeeklySum()) >= specificLevelLimits.getWeeklyLimit()) {
-                req.setQuotaCheck("MESSAGETYPE_LIMIT_EXCEEDED");
+            if (limitsToApply.getWeeklyLimit() >= 0 && (limitsToApply.getDailyCount() + limitsToApply.getWeeklySum()) >= limitsToApply.getWeeklyLimit()) {
+                req.setQuotaCheck("WEEKLY_LIMIT_EXCEEDED");
                 handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "MessageType-Level Weekly limit exceeded", "MESSAGETYPE_LIMIT_EXCEEDED");
+                String logDetails = formatLimitLog(limitsToApply, "WEEKLY");
+                log.warn("LIMIT EXCEEDED for actorId {}. Policy: {}. Details: {}", actorId, activePolicyRule.getPolicyName(), logDetails);
+                return generateFailCommunicationResponse(request, activePolicyRule.getPolicyName() + " Weekly limit exceeded", "WEEKLY_LIMIT_EXCEEDED");
             }
-            if (specificLevelLimits.getMonthlyLimit() >= 0 && (specificLevelLimits.getDailyCount() + specificLevelLimits.getMonthlySum()) >= specificLevelLimits.getMonthlyLimit()) {
-                req.setQuotaCheck("MESSAGETYPE_LIMIT_EXCEEDED");
+            if (limitsToApply.getMonthlyLimit() >= 0 && (limitsToApply.getDailyCount() + limitsToApply.getMonthlySum()) >= limitsToApply.getMonthlyLimit()) {
+                req.setQuotaCheck("MONTHLY_LIMIT_EXCEEDED");
                 handlingService.handleRequest(req);
-                return generateFailCommunicationResponse(request, "MessageType-Level Monthly limit exceeded", "MESSAGETYPE_LIMIT_EXCEEDED");
+                String logDetails = formatLimitLog(limitsToApply, "MONTHLY");
+                log.warn("LIMIT EXCEEDED for actorId {}. Policy: {}. Details: {}", actorId, activePolicyRule.getPolicyName(), logDetails);
+                return generateFailCommunicationResponse(request, activePolicyRule.getPolicyName() + " Monthly limit exceeded", "MONTHLY_LIMIT_EXCEEDED");
             }
 
+            // KONTROLDEN GEÇTİ
+            String logDetails = formatLimitLog(limitsToApply, "OK");
+            log.info("LIMIT CHECK PASSED for actorId {}. Policy: {}. Details: {}", actorId, activePolicyRule.getPolicyName(), logDetails);
+
+            //İŞLEMİ YAP
             req.setQuotaCheck("OK");
             handlingService.handleRequest(req);
 
-            long updatedDailySum = specificLevelLimits.getDailyCount() + 1;
+            // Cache'i güncellerken HER ZAMAN gönderilen spesifik mesaj tipinin sayısını hesapla ve 1 artır.
+            Predicate<Map<String, Object>> specificFilterForUpdate = tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))) && messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE")));
+            int specificDailyCount = cacheQueryService.sumTransactionValues(dailyTransactions, specificFilterForUpdate, "SENT_COUNT");
+            long updatedDailySum = specificDailyCount + 1;
+
             try {
                 cacheQueryService.putCacheValue(req, requiredFields, String.valueOf(updatedDailySum));
             } catch (Exception e) {
+
                 log.error("Failed to update cache after successful quota check for actorId: {}. Error: {}", actorId, e.getMessage());
             }
-            CommunicationResponse ok = generateSuccessCommunicationResponse(request, "Success", "All limits checked and valid. Daily sent count updated.");
-            return ok;
+            return generateSuccessCommunicationResponse(request, "Success", "All limits checked and valid. Daily sent count updated.");
 
         } catch (Exception e) {
             log.error("Unexpected error while fetching or checking cache data. RequestId={} request={}", req.getCommunicationUUID(), request, e);
@@ -197,6 +247,24 @@ public class EecCacheGetCommunicationClient extends AbstractCommunicationClient 
             return fail;
         }
     }
+    public boolean isNowWithin(String startHHmm, String endHHmm) {
+        try {
+            LocalTime start = LocalTime.parse(startHHmm);
+            LocalTime end = LocalTime.parse(endHHmm);
+            LocalTime now = LocalTime.now(); //
+            // sistem varsayılanı
+            if (now.isAfter(start) && now.isBefore(end)) {
+
+                return true;
+            }
+
+        }catch(Exception e){
+            log.error("Error parsing proper time range: start='{}', end='{}'. Error: {}", startHHmm, endHHmm, e.getMessage());
+            return false; // Zaman aralığı hat
+        }
+        return false;
+    }
+
 
     @Override
     public String getProvider() {

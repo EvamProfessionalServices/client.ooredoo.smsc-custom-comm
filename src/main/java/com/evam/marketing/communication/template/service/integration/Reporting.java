@@ -140,7 +140,13 @@ public class Reporting {
             if(SUCCESS.equals(status)){
                 ps.setNull(40,java.sql.Types.VARCHAR);
             }else {
-                ps.setString(40, request.getComputed().isControlGroup() ? CONTROL_GROUP : CONTACT_POLICY);
+                // PROPER_TIME nedeniyle reject ise özel olarak işle
+                String quotaCheck = request.getComputed().getQuotaCheck();
+                if ("PROPER_TIME".equals(quotaCheck)) {
+                    ps.setString(40, "PROPER_TIME");
+                } else {
+                    ps.setString(40, request.getComputed().isControlGroup() ? CONTROL_GROUP : CONTACT_POLICY);
+                }
             }
         }catch (SQLException e){
             log.error(e.getMessage());
