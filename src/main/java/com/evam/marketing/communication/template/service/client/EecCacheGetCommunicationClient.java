@@ -103,14 +103,29 @@ public class EecCacheGetCommunicationClient extends AbstractCommunicationClient 
         try {
 
             Map<String, String> requiredFields = extractRequiredFields(req);
+            try {
+                if(!isNowWithin(requiredFields.get("properStartHour"),requiredFields.get("properEndHour"))){
+                    req.setQuotaCheck("PROPER_TIME");
+                    handlingService.handleRequest(req);
+                    log.info("Current time is out of proper time range for scenario '{}'. Skipping all limit checks.", req.getScenario());
+                    return generateFailCommunicationResponse(request, "Current time is out of proper time range.", "PROPER_TIME");
+                }
+
+            } catch (Exception e) {
 
 
-            if(!isNowWithin(requiredFields.get("properStartHour"),requiredFields.get("properEndHour"))){
                 req.setQuotaCheck("PROPER_TIME");
                 handlingService.handleRequest(req);
-                log.info("Current time is out of proper time range for scenario '{}'. Skipping all limit checks.", req.getScenario());
+                log.error("Error checking proper time range for actorId {}. Proceeding with limit checks. Error: {}", actorId, e.getMessage());
                 return generateFailCommunicationResponse(request, "Current time is out of proper time range.", "PROPER_TIME");
-            }log.info("Current time is within proper time range for scenario '{}'. Proceeding with limit checks.", req.getScenario());
+
+            }
+            //            if(!isNowWithin(requiredFields.get("properStartHour"),requiredFields.get("properEndHour"))){
+//                req.setQuotaCheck("PROPER_TIME");
+//                handlingService.handleRequest(req);
+//                log.info("Current time is out of proper time range for scenario '{}'. Skipping all limit checks.", req.getScenario());
+//                return generateFailCommunicationResponse(request, "Current time is out of proper time range.", "PROPER_TIME");
+//            }log.info("Current time is within proper time range for scenario '{}'. Proceeding with limit checks.", req.getScenario());
 
             String applyContactPolicy = requiredFields.get("applyContactPolicy");
             if ("FALSE".equalsIgnoreCase(applyContactPolicy)) {
@@ -155,10 +170,10 @@ public class EecCacheGetCommunicationClient extends AbstractCommunicationClient 
 
             // 2. Dört potansiyel kural anahtarını ve filtrelerini tanımla
             Map<CacheKey, Predicate<Map<String, Object>>> potentialRules = new LinkedHashMap<>();
-            potentialRules.put(new CacheKey(actorId, "ALL", "ALL"), tx -> true);
-            potentialRules.put(new CacheKey(actorId, channel, "ALL"), tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))));
+//            potentialRules.put(new CacheKey(actorId, "ALL", "ALL"), tx -> true);
+//            potentialRules.put(new CacheKey(actorId, channel, "ALL"), tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))));
             potentialRules.put(new CacheKey(actorId, channel, messageType), tx -> channel.equals(String.valueOf(tx.get("CHANNEL"))) && messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE"))));
-            potentialRules.put(new CacheKey(actorId, "ALL", messageType), tx -> messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE"))));
+//            potentialRules.put(new CacheKey(actorId, "ALL", messageType), tx -> messageType.equals(String.valueOf(tx.get("MESSAGE_TYPE"))));
 
             // 3. Tüm potansiyel kuralları cache'ten çek
             List<PolicyRule> foundPolicies = new ArrayList<>();
