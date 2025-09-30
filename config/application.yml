@@ -124,3 +124,4 @@ eec:
   trx-hist-cache: OOREDOO_CUSTOM_CP_TRANSACTION_HIST
   customer-detail-cache: CUSTOM_CUSTOMER_DETAILS
   scenario-meta-params-cache: SCENARIO_META_PARAMETERS
+  actor-segment-cache-name: ACTOR_SEGMENT_CP

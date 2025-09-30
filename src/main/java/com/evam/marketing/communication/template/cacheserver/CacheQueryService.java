@@ -47,6 +47,8 @@ public class CacheQueryService {
     private CacheValueDescriptor customerDetailsCacheValueDescriptor;
     private IgniteCache<CacheKey, CacheValue> scenarioMetaParamsCache;
     private CacheValueDescriptor scenarioMetaParamsCacheValueDescriptor;
+    private IgniteCache<CacheKey, CacheValue> actorSegmentCache;
+    private CacheValueDescriptor actorSegmentCacheValueDescriptor;
 
     @Value("${eec.pool-cache-name}")
     private String contactPolicyCacheName;
@@ -58,6 +60,8 @@ public class CacheQueryService {
     private String customerDetailsCacheName;
     @Value("${eec.scenario-meta-params-cache}")
     private String scenarioMetaParamsCacheName;
+    @Value("${eec.actor-segment-cache-name}")
+    private String actorSegmentCacheName;
 
     @Value("${eec.ignite-client-file-path}")
     private String igniteClientFilePath;
@@ -92,6 +96,20 @@ public class CacheQueryService {
             log.error("Error getting policy values for key: {}", key, e);
         }
         return null; // Bulunamazsa veya hata olursa null dön.
+    }
+
+    //GET SEGMENT NAME BY ACTOR ID
+    public String getSegmentNameByActorId(String actorId) {
+        try {
+            CacheKey cacheKey = new CacheKey(actorId);
+            CacheValue cacheValue = actorSegmentCache.get(cacheKey);
+            List<String> values = Arrays.asList(cacheValue.getValues());
+            String segmentName = values.get(0);
+            return segmentName;
+        }catch (Exception e){
+            log.error("Error getting segment name for actorId: {}", actorId, e);
+            return null;
+        }
     }
 
     /**
@@ -252,6 +270,8 @@ public class CacheQueryService {
         customerDetailsCacheValueDescriptor = container.getCacheValueDescriptor(customerDetailsCacheName);
         scenarioMetaParamsCache = container.getCache(scenarioMetaParamsCacheName);
         scenarioMetaParamsCacheValueDescriptor = container.getCacheValueDescriptor(scenarioMetaParamsCacheName);
+        actorSegmentCache = container.getCache(actorSegmentCacheName);
+        actorSegmentCacheValueDescriptor = container.getCacheValueDescriptor(actorSegmentCacheName);
     }
 
     @PreDestroy
