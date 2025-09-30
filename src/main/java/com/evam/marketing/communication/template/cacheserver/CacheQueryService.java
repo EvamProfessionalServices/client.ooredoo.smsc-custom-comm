@@ -47,6 +47,8 @@ public class CacheQueryService {
     private CacheValueDescriptor customerDetailsCacheValueDescriptor;
     private IgniteCache<CacheKey, CacheValue> scenarioMetaParamsCache;
     private CacheValueDescriptor scenarioMetaParamsCacheValueDescriptor;
+    private IgniteCache<CacheKey, CacheValue> actorSegmentCache;
+    private CacheValueDescriptor actorSegmentCacheValueDescriptor;
 
     @Value("${eec.pool-cache-name}")
     private String contactPolicyCacheName;
@@ -58,6 +60,8 @@ public class CacheQueryService {
     private String customerDetailsCacheName;
     @Value("${eec.scenario-meta-params-cache}")
     private String scenarioMetaParamsCacheName;
+    @Value("${eec.actor-segment-cache-name}")
+    private String actorSegmentCacheName;
 
     @Value("${eec.ignite-client-file-path}")
     private String igniteClientFilePath;
@@ -77,6 +81,44 @@ public class CacheQueryService {
                 .mapToInt(tx -> tx.containsKey(key) ? ((Number) tx.get(key)).intValue() : 0)
                 .sum();
     }
+    /**
+     * Belirtilen filtreye uyan ilk transaction kaydını bulur ve istenen alandaki (key) değeri döner.
+     * Toplama yapmak yerine doğrudan spesifik bir kaydın değerini okumak için kullanılır.
+     * @param transactions İşlem listesi (daily veya hist)
+     * @param filter İstenen kaydı bulmak için kullanılacak filtre (predicate)
+     * @param key Değeri okunacak alanın adı ("SENT_COUNT", "WEEKLY_SUM", vb.)
+     * @return Bulunan kayıttaki ilgili alanın integer değeri. Kayıt veya alan bulunamazsa 0 döner.
+     */
+    public int getSpecificTransactionValue(List<Map<String, Object>> transactions, Predicate<Map<String, Object>> filter, String key) {
+        if (transactions == null || transactions.isEmpty()) {
+            return 0;
+        }
+
+        // Stream'i kullanarak filtreye uyan ilk elemanı bir Optional olarak al
+        Optional<Map<String, Object>> foundOptional = transactions.stream()
+                .filter(filter)
+                .findFirst();
+
+        // Eğer filtreye uyan bir kayıt bulunamadıysa, 0 dön
+        if (foundOptional.isEmpty()) {
+            return 0;
+        }
+
+        // Eğer kayıt bulunduysa, Optional'dan Map'i çıkar
+        Map<String, Object> transactionMap = foundOptional.get();
+
+        // Map içerisinden istenen 'key' ile değeri al (Object tipinde gelecektir)
+        Object value = transactionMap.get(key);
+
+        // Değerin null olmadığını ve bir sayı (Number) olduğunu kontrol et
+        if (value instanceof Number) {
+            // Güvenli bir şekilde integer'a çevir ve döndür
+            return ((Number) value).intValue();
+        }
+
+        // Eğer değer null ise veya sayı değilse, 0 dön
+        return 0;
+    }
 
     /**
      * EecCacheGetCommunicationClient'ın hiyerarşik kural araması için gereken yardımcı metod.
@@ -92,6 +134,20 @@ public class CacheQueryService {
             log.error("Error getting policy values for key: {}", key, e);
         }
         return null; // Bulunamazsa veya hata olursa null dön.
+    }
+
+    //GET SEGMENT NAME BY ACTOR ID
+    public String getSegmentNameByActorId(String actorId) {
+        try {
+            CacheKey cacheKey = new CacheKey(actorId);
+            CacheValue cacheValue = actorSegmentCache.get(cacheKey);
+            List<String> values = Arrays.asList(cacheValue.getValues());
+            String segmentName = values.get(0);
+            return segmentName;
+        }catch (Exception e){
+            log.error("Error getting segment name for actorId: {}", actorId, e);
+            return null;
+        }
     }
 
     /**
@@ -252,6 +308,8 @@ public class CacheQueryService {
         customerDetailsCacheValueDescriptor = container.getCacheValueDescriptor(customerDetailsCacheName);
         scenarioMetaParamsCache = container.getCache(scenarioMetaParamsCacheName);
         scenarioMetaParamsCacheValueDescriptor = container.getCacheValueDescriptor(scenarioMetaParamsCacheName);
+        actorSegmentCache = container.getCache(actorSegmentCacheName);
+        actorSegmentCacheValueDescriptor = container.getCacheValueDescriptor(actorSegmentCacheName);
     }
 
     @PreDestroy

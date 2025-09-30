@@ -8,10 +8,10 @@ spring:
   main:
     web-application-type: none
   datasource:
-    url: jdbc:postgresql://172.19.166.12:5432/evam82 #oracle jdbc:oracle:thin:@localhost:1521:xe
+    url: jdbc:oracle:thin:@//localhost:1521/FREEPDB1 #oracle jdbc:oracle:thin:@localhost:1521:xe
 #    url: jdbc:oracle:thin:@localhost:1521:xe
-    username: evam
-    password: evam1234
+    username: ENG
+    password: evam123
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
@@ -27,8 +27,10 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect #oracle org.hibernate.dialect.Oracle10gDialect
-#        dialect: org.hibernate.dialect.OracleDialect
+#        dialect: org.hibernate.dialect.PostgreSQLDialect #oracle org.hibernate.dialect.Oracle10gDialect
+#        dialect: oracle.jdbc.driver.OracleDriver
+#        dialect: org.hibernate.dialect.Oracle10gDialect
+        dialect: org.hibernate.dialect.OracleDialect
         generate_statistics: true
         order_inserts: true
         order_updates: true
@@ -49,14 +51,14 @@ kafka:
     replication: 1
     retention-ms: 43200000
   integration-topic:
-    name: smscomTopic
-    group: smscustomCommunicationGroup
+    name: customcomTopic
+    group: ooredooTopicCommunicationGroup01
     auto-offset-reset: earliest
     enable-auto-commit: false
     partition: 8
     replication: 1
     retention-ms: 43200000
-    concurrency: 4
+    concurrency: 8
     max-pool-records: 1000
     #custom-config-properties:
     #  - key: "heartbeat.interval.ms"
@@ -108,9 +110,9 @@ persister:
   time-stamp-format-postgres: yyyy-MM-dd HH:mm:ss
   oracle-schema-name: PMP_EVAM
   postgresql-schema-name: evam
-  insertSql:  "insert into ooredoo_custom_sms_reporting (msisdn, contract_id, languagepreference, message_text, senderid, testmodeenabled, flashsmsenabled, cam_id, campaign_name, segment_name, transaction_id, treatment_name, treatment_id, offer_name, offer_id, usecase_treatment_code, ref_transaction_id, treatment_code, template_name, message_type, customer_type, message_id, event_name, mapping_name, price, offer_category, tg_cg_flag, direction, business_group, business_subgroup, campaign_objective, campaign_type, offer_type, offer_start_date, offer_end_date, alt_contact_number, main_campaign_name, delivery_status, reason_detail) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  insertSql:  "INSERT INTO OOREDOO_CUSTOM_SMS_REPORTING (ID, MSISDN, CONTRACT_ID, LANGUAGEPREFERENCE, MESSAGE_TEXT, SENDERID, TESTMODEENABLED, FLASHSMSENABLED, CAM_ID, CAMPAIGN_NAME, SEGMENT_NAME, TRANSACTION_ID, TREATMENT_NAME, TREATMENT_ID, OFFER_NAME, OFFER_ID, USECASE_TREATMENT_CODE, REF_TRANSACTION_ID, TREATMENT_CODE, TEMPLATE_NAME, MESSAGE_TYPE, CUSTOMER_TYPE, MESSAGE_ID, EVENT_NAME, MAPPING_NAME, PRICE, OFFER_CATEGORY, TG_CG_FLAG, DIRECTION, BUSINESS_GROUP, BUSINESS_SUBGROUP, CAMPAIGN_OBJECTIVE, CAMPAIGN_TYPE, OFFER_TYPE, OFFER_START_DATE, OFFER_END_DATE, ALT_CONTACT_NUMBER, MAIN_CAMPAIGN_NAME, DELIVERY_STATUS, STATUS, REASON, REASON_DETAIL) VALUES (OOREDOO_CUSTOM_SMS_SEQ.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 smpp:
-  host: 10.192.254.15
+  host: localhost
   port: 6693
   username: EVAM
   password: EVAM
@@ -118,9 +120,10 @@ smpp:
   timeout: 10000
 eec:
   ignite-client-file-path: config/ignite-client.json
-  app-token: eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJFVkFNLVNFUlZJQ0UtTEFZRVIiLCJpYXQiOjE3NTY5MTA3MzIsInRva2VuVHlwZSI6IkFQUExJQ0FUSU9OIiwidG9rZW5DbGFpbXMiOnsidXNlcklkIjo2MSwidXNlckFsaWFzIjoiY29tbXVuaWNhdG9ycyIsInByaXZpbGVnZXMiOltdfX0.HCXlBv8N2lug0GhLLVvPMn9Wl-Hbtz7JfEAnmGnkkPM
+  app-token: eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJFVkFNLVNFUlZJQ0UtTEFZRVIiLCJpYXQiOjE3NTk1Njk3OTEsInRva2VuVHlwZSI6IkFQUExJQ0FUSU9OIiwidG9rZW5DbGFpbXMiOnsidXNlcklkIjoxLCJ1c2VyQWxpYXMiOiJDb21tIiwicHJpdmlsZWdlcyI6W119fQ.pdCxFkMBXUFWWgh72rcHOgb9eIUiru0Sy4x8KyM9Npk
   pool-cache-name: OOREDOO_CUSTOM_CONTACT_POLICY
   trx-daily-cache: OOREDOO_CUSTOM_CP_TRANSACTION_DAILY
   trx-hist-cache: OOREDOO_CUSTOM_CP_TRANSACTION_HIST
-  customer-detail-cache: CUSTOM_CUSTOMER_DETAILS
+  customer-detail-cache: CUSTOM_COMMUNICATION_DETAILS
   scenario-meta-params-cache: SCENARIO_META_PARAMETERS
+  actor-segment-cache-name: ACTOR_SEGMENT_CP

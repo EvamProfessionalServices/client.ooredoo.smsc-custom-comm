@@ -9,8 +9,8 @@
     "ipFinder": {
       "type": "TcpDiscoveryVmIpFinder",
       "addrs": [
-        "172.19.166.12:17500",
-        "172.19.166.12:17501"
+        "localhost:17500",
+        "localhost:17501"
       ]
     },
     "locPort": 17500,
