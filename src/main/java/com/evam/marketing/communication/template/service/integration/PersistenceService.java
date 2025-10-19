@@ -89,15 +89,15 @@ public class PersistenceService extends AbstractCommunicationClient{
             List<ServiceRequest> quotaLimitExceededRequests = requests.stream()
                     .filter(r -> {
                         String quoutaCheck = r.getComputed().getQuotaCheck();
-                        if ("OK".equals(quoutaCheck))
-                        {
+
+                        if ("OK".equals(quoutaCheck)) {
                             log.debug("Quota actor will be inserted into Evam Repo. ActorId: {} ", r.getBase().getActorId());
                             return false;
                         }
                         return true;
                     }).toList();
             if(!quotaLimitExceededRequests.isEmpty()) {
-                log.info("Persisting quota actors of " + quotaLimitExceededRequests.size() + " requests to Evam Repo.");
+                log.debug("Persisting quota actors of " + quotaLimitExceededRequests.size() + " requests to Evam Repo.");
                 reporting.saveToDatabase(quotaLimitExceededRequests, QUOTA_EXCEEDED);
                 quotaLimitExceededRequests.forEach( x-> sendEvent(generateFailCommunicationResponse(x.getOriginalRequest(),"EVAM",x.getComputed().getQuotaCheck()).toEvent()));
             }
@@ -113,7 +113,7 @@ public class PersistenceService extends AbstractCommunicationClient{
                         return testModeEnabled;
                     }).toList();
             if(!testRequests.isEmpty()) {
-                log.info("Persisting test actors of " + testRequests.size() + " requests to Evam Repo.");
+                log.info("Persisting TEST MODE records of " + testRequests.size() + " requests to Evam Repo.");
                 reporting.saveToDatabase(testRequests, SUCCESS);
                 testRequests.forEach( x-> sendEvent(generateSuccessCommunicationResponse(x.getOriginalRequest(),"EVAM","Successfully inserted into Oracle" ).toEvent()));
             }
@@ -131,7 +131,7 @@ public class PersistenceService extends AbstractCommunicationClient{
                         return controlGroup;
                     }).toList();
             if(!controlGroupRequests.isEmpty()) {
-                log.info("Persisting control group actors of " + controlGroupRequests.size() + " requests to Evam Repo.");
+                log.debug("Persisting control group actors of " + controlGroupRequests.size() + " requests to Evam Repo.");
                 reporting.saveToDatabase(controlGroupRequests, CONTROL_GROUP);
                 controlGroupRequests.forEach( x-> sendEvent(generateSuccessCommunicationResponse(x.getOriginalRequest(),"EVAM","Successfully inserted into Oracle" ).toEvent()));
             }
@@ -142,10 +142,14 @@ public class PersistenceService extends AbstractCommunicationClient{
 
                     byte[] messageBytes = {};
                     Alphabet dataCoding = Alphabet.ALPHA_DEFAULT;
+
                     RawDataCoding rawDataCoding = null;
+
+
                     int segmentSize = 153;
 
                     String message = "";
+                    log.debug(">>> PersistenceService: SMPPSession KULLANILIYOR. Hash Kodu: {}", smppSession.hashCode());
                     List<byte[]> bytes = new ArrayList<>();
                     try {
                         boolean isEmoji = false;
@@ -232,7 +236,9 @@ public class PersistenceService extends AbstractCommunicationClient{
                                     TypeOfNumber.INTERNATIONAL, NumberingPlanIndicator.UNKNOWN, x.getComputed().getTo(),
                                     new ESMClass(), (byte) 0, (byte) 1,
                                     TIME_FORMATTER.format(new Date()), null,
-                                    new RegisteredDelivery(SMSCDeliveryReceipt.DEFAULT),
+                                    //burda 1 değeri verdim deneme amaçlı
+     //                               new RegisteredDelivery(SMSCDeliveryReceipt.DEFAULT),
+                                     new RegisteredDelivery((byte) 1),
                                     (byte) 0,
                                     flash ? generalDataCoding : rawDataCoding,
                                     (byte) 0,
@@ -262,7 +268,7 @@ public class PersistenceService extends AbstractCommunicationClient{
 
                                 OptionalParameter sarSegmentSeqnum = OptionalParameters.newSarSegmentSeqnum(seqNum);
 
-                                log.info("segment " + seqNum + " - " + Arrays.toString(segment));
+                                log.debug("segment " + seqNum + " - " + Arrays.toString(segment));
                                 messageId = smppSession.submitShortMessage(
                                         "CMT",
                                         TypeOfNumber.ALPHANUMERIC, NumberingPlanIndicator.UNKNOWN, x.getComputed().getSenderId(),
@@ -279,16 +285,18 @@ public class PersistenceService extends AbstractCommunicationClient{
                             }
                         }
                         x.setMessageId(messageId);
-                        log.info("Message submitted, message_id is {}", messageId);
+                        log.debug("Message submitted, message_id is {}", messageId);
                         sendEvent(generateSuccessCommunicationResponse(x.getOriginalRequest(), "EVAM", "Successfully inserted into Oracle").toEvent());
                         performanceCounter.increment(CLASS_SIMPLE_NAME, PerformanceModelType.SUCCESS);
                     } catch (PDUException | ResponseTimeoutException | InvalidResponseException | NegativeResponseException |
                             IOException e) {
                         log.error("Error while sending message to MSISDN : {} Reason : {}",x.getBase().getActorId(), e.getMessage());
                     }
+ //                   log.info("Persisted {} requests into the Oracle MV.", requests.size());
                 });
+                log.info("Persisted {} requests into the Oracle MV.", requests.size());
                 reporting.saveToDatabase(requests, "SUCCESS");
-                log.debug("Persisted {} requests into the Oracle MV.", requests.size());
+
             }
 
         } catch (Exception e) {

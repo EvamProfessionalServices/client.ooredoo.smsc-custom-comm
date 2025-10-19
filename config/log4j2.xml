@@ -30,7 +30,7 @@
         <Logger name="org.hibernate" level="WARN"/>
         <Logger name="org.springframework" level="INFO"/>
 
-        <Logger name="com.evam.marketing" level="INFO"/>
+        <Logger name="com.evam.marketing" level="DEBUG"/>
 
         <Root level="INFO">
             <AppenderRef ref="RollingFile"/>

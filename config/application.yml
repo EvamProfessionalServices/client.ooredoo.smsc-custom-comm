@@ -47,19 +47,19 @@ kafka:
   communication-uuid-check: true #If changed to false, the communicationUUID index should be removed. If it is not removed, it may be saved in the push status table incompletely.
   event-topic:
     name: campaignEventsTopic
-    partition: 8
+    partition: 16
     replication: 1
     retention-ms: 43200000
   integration-topic:
     name: customcomTopic
-    group: ooredooTopicCommunicationGroup01
+    group: ooredooTopicCommunicationGroup
     auto-offset-reset: earliest
     enable-auto-commit: false
     partition: 8
     replication: 1
     retention-ms: 43200000
-    concurrency: 8
-    max-pool-records: 1000
+    concurrency: 4
+    max-pool-records: 500
     #custom-config-properties:
     #  - key: "heartbeat.interval.ms"
     #    value: "3000"
@@ -75,11 +75,11 @@ kafka:
 ### RATE LIMITER
 #### The client send method is called a maximum of 5 times in 1 second.
 
-#resilience4j.ratelimiter:
-#  instances:
-#    client-limiter:
-#      limitForPeriod: 5
-#      limitRefreshPeriod: 1s
+resilience4j.ratelimiter:
+  instances:
+    client-limiter:
+      limitForPeriod: 400
+      limitRefreshPeriod: 1s
 
 cloud-marketing-survey-link-client:
   enabled: true
@@ -103,9 +103,9 @@ performance-counter:
   count-enabled: true
   scheduler-enabled: false
 persister:
-  persist-job-buffer-size: 500
+  persist-job-buffer-size: 400
   persist-pool-size: 1
-  test-actors: 923345054724,923345054725,923345054726,923345054727,923345054728
+  test-actors: 923345054724,923345054725,923345054726,923345054727,923345054728,10
   time-stamp-format-oracle: yyyy-MM-dd
   time-stamp-format-postgres: yyyy-MM-dd HH:mm:ss
   oracle-schema-name: PMP_EVAM
@@ -113,11 +113,17 @@ persister:
   insertSql:  "INSERT INTO OOREDOO_CUSTOM_SMS_REPORTING (ID, MSISDN, CONTRACT_ID, LANGUAGEPREFERENCE, MESSAGE_TEXT, SENDERID, TESTMODEENABLED, FLASHSMSENABLED, CAM_ID, CAMPAIGN_NAME, SEGMENT_NAME, TRANSACTION_ID, TREATMENT_NAME, TREATMENT_ID, OFFER_NAME, OFFER_ID, USECASE_TREATMENT_CODE, REF_TRANSACTION_ID, TREATMENT_CODE, TEMPLATE_NAME, MESSAGE_TYPE, CUSTOMER_TYPE, MESSAGE_ID, EVENT_NAME, MAPPING_NAME, PRICE, OFFER_CATEGORY, TG_CG_FLAG, DIRECTION, BUSINESS_GROUP, BUSINESS_SUBGROUP, CAMPAIGN_OBJECTIVE, CAMPAIGN_TYPE, OFFER_TYPE, OFFER_START_DATE, OFFER_END_DATE, ALT_CONTACT_NUMBER, MAIN_CAMPAIGN_NAME, DELIVERY_STATUS, STATUS, REASON, REASON_DETAIL) VALUES (OOREDOO_CUSTOM_SMS_SEQ.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 smpp:
   host: localhost
-  port: 6693
-  username: EVAM
-  password: EVAM
+  port: 2776
+  username: smppclient1
+  password: password
   type: SMPP
-  timeout: 10000
+  timeout: 3000
+  batch:
+    max-retries: 2
+    size: 200
+    flush-interval-ms: 200
+  delivery-report:
+    table-name: OOREDOO_CUSTOM_SMS_REPORTING
 eec:
   ignite-client-file-path: config/ignite-client.json
   app-token: eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJFVkFNLVNFUlZJQ0UtTEFZRVIiLCJpYXQiOjE3NTk1Njk3OTEsInRva2VuVHlwZSI6IkFQUExJQ0FUSU9OIiwidG9rZW5DbGFpbXMiOnsidXNlcklkIjoxLCJ1c2VyQWxpYXMiOiJDb21tIiwicHJpdmlsZWdlcyI6W119fQ.pdCxFkMBXUFWWgh72rcHOgb9eIUiru0Sy4x8KyM9Npk

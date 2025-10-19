@@ -200,6 +200,70 @@ public class CacheQueryService {
             log.error("Cache write error during read-modify-write for dailyTransactions key: {}", req.getActorId(), e);
         }
     }
+    /**
+     * Kota kontrolü başarılı olduğunda ve SMS gönderimi tamamlandığında
+     * transaction cache'ini güncelleyen atomik metod.
+     * Mevcut değeri okur, 1 artırır ve geri yazar. Eğer ilgili kayıt yoksa oluşturur.
+     * Bu metod PersistenceService tarafından çağrılmak üzere tasarlanmıştır.
+     */
+//    public void incrementAndPutCacheValue(CustomCommunicationRequest req, Map<String, String> requiredFields) {
+//        try {
+//            CacheKey cacheKey = new CacheKey(req.getActorId());
+//            ObjectMapper objectMapper = new ObjectMapper();
+//
+//            // 1. Adım: Cache'ten mevcut veriyi oku
+//            CacheValue existingValue = trxDailyCache.get(cacheKey);
+//            List<Map<String, Object>> transactionsList;
+//
+//            if (existingValue == null || existingValue.getValues().length == 0 || existingValue.getValues()[0] == null || existingValue.getValues()[0].isEmpty()) {
+//                transactionsList = new ArrayList<>();
+//            } else {
+//                String jsonString = existingValue.getValues()[0];
+//                transactionsList = objectMapper.readValue(jsonString, new TypeReference<List<Map<String, Object>>>() {});
+//            }
+//
+//            String requiredMessageType = requiredFields.get("messageType");
+//            boolean entryFoundAndUpdated = false;
+//
+//            // 2. Adım: İlgili kaydı bul ve SENT_COUNT'u 1 artır
+//            for (Map<String, Object> transaction : transactionsList) {
+//                String channel = (String) transaction.get("CHANNEL");
+//                String messageType = (String) transaction.get("MESSAGE_TYPE");
+//
+//                if ("SMS".equals(channel) && requiredMessageType.equals(messageType)) {
+//                    // Mevcut sayıyı al, eğer yoksa 0 kabul et
+//                    Object currentCountObj = transaction.get("SENT_COUNT");
+//                    int currentCount = (currentCountObj instanceof Number) ? ((Number) currentCountObj).intValue() : 0;
+//
+//                    // Sayıyı 1 artır ve geri koy
+//                    transaction.put("SENT_COUNT", currentCount + 1);
+//                    entryFoundAndUpdated = true;
+//                    log.debug("Found and incremented SENT_COUNT for actor {} and messageType {}", req.getActorId(), requiredMessageType);
+//                    break;
+//                }
+//            }
+//
+//            // 3. Adım: Eğer kayıt bulunamadıysa, yeni bir kayıt oluştur
+//            if (!entryFoundAndUpdated) {
+//                Map<String, Object> newTransaction = new LinkedHashMap<>();
+//                newTransaction.put("CHANNEL", "SMS");
+//                newTransaction.put("MESSAGE_TYPE", requiredMessageType);
+//                newTransaction.put("SENT_COUNT", 1); // İlk kayıt olduğu için 1 olarak başla
+//                transactionsList.add(newTransaction);
+//                log.debug("Created new SENT_COUNT entry for actor {} and messageType {}", req.getActorId(), requiredMessageType);
+//            }
+//
+//            // 4. Adım: Güncellenmiş listeyi JSON'a çevirip cache'e geri yaz
+//            String updatedJson = objectMapper.writeValueAsString(transactionsList);
+//            CacheValue newCacheValue = new CacheValue(new String[]{updatedJson}, 1, 1);
+//            trxDailyCache.put(cacheKey, newCacheValue);
+//
+//        } catch (Exception e) {
+//            log.error("Cache write error during read-increment-write for dailyTransactions key: {}", req.getActorId(), e);
+//            // Hata durumunda event göndermek veya yeniden deneme mekanizması kurmak düşünülebilir.
+//        }
+//    }
+
 
     public CustomerDetails getCustomerDetails(String actorId) {
         if (StringUtils.isEmpty(actorId)) {

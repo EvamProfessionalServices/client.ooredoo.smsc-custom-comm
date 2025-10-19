@@ -34,7 +34,7 @@ public class CommunicationStatusServiceImpl implements CommunicationStatusServic
     @Override
     public void saveBatchCommunicationStatus(Collection<CustomCommunicationStatus> statusList) {
         List<CustomCommunicationStatus> responseStatus = communicationStatusRepository.saveAll(statusList);
-        log.info("Communication status successfully batch saved. Request: {}, response: {}",
+        log.debug("Communication status successfully batch saved. Request: {}, response: {}",
                 statusList, responseStatus);
     }
 }

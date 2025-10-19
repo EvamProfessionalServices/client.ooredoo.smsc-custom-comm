@@ -147,54 +147,72 @@ public class Reporting {
             ps.setString(39, QUOTA_EXCEEDED.equals(status) ? REJECTED : status);
             if (SUCCESS.equals(status)) {
                 // Başarılıysa, her iki neden kolonu da null olmalı.
+//                ps.setNull(40, java.sql.Types.VARCHAR); // REASON
+//                ps.setNull(41, java.sql.Types.VARCHAR); // REASON_DETAIL
                 ps.setNull(40, java.sql.Types.VARCHAR); // REASON
-                ps.setNull(41, java.sql.Types.VARCHAR); // REASON_DETAIL
+
+                // --- YENİ VE NİHAİ MANTIK BAŞLIYOR ---
+
+                // 1. Orijinal isteğin parametre listesini al.
+                List<com.evam.marketing.communication.template.service.client.model.Parameter> originalParams =
+                        request.getOriginalRequest().getParameters();
+
+                String applyContactPolicyValue = "TRUE"; // Varsayılan olarak TRUE kabul et
+
+                // 2. Parametre listesini döngüyle kontrol et ve 'applyContactPolicy' değerini bul.
+                if (originalParams != null) {
+                    for (com.evam.marketing.communication.template.service.client.model.Parameter p : originalParams) {
+                        if ("applyContactPolicy".equals(p.getName())) {
+                            applyContactPolicyValue = p.getValue();
+                            break; // Değeri bulunca döngüden çık
+                        }
+                    }
+                }
+
+                // 3. Bulunan değere göre REASON_DETAIL kolonunu ayarla.
+                if ("FALSE".equalsIgnoreCase(applyContactPolicyValue)) {
+                    ps.setString(41, "SKIP_CP");
+                } else {
+                    ps.setNull(41, java.sql.Types.VARCHAR); // Diğer tüm başarılı durumlarda (TRUE veya parametre yoksa) null
+                }
+                // --- YENİ VE NİHAİ MANTIK BİTİYOR ---
+
 
             } else {
                 // Başarısız durumlar için...
                 String quotaCheck = request.getComputed().getQuotaCheck();
 
                 if ("PROPER_TIME".equals(quotaCheck)) {
-                    // KURAL: Proper Time durumu
-                    // REASON = PROPER_TIME (Eski davranış)
+
                     ps.setString(40, "PROPER_TIME");
                     // REASON_DETAIL = null (Yeni kural)
                     ps.setNull(41, java.sql.Types.VARCHAR);
+                    log.debug("Proper Time case for TransactionID: {}. Setting REASON [40] to 'PROPER_TIME' and REASON_DETAIL [41] to null.",
+                            request.getComputed().getTransactionId());
 
                 } else if (request.getComputed().isControlGroup()) {
                     // KURAL: Control Group durumu (YENİ EKLENEN KONTROL)
-                    // REASON = CONTROL_GROUP (Eski davranış)
+
                     ps.setString(40, CONTROL_GROUP);
                     // REASON_DETAIL = null (Yeni kural)
                     ps.setNull(41, java.sql.Types.VARCHAR);
+                    log.debug("Control Group case for TransactionID: {}. Setting REASON [40] to 'CONTROL_GROUP' and REASON_DETAIL [41] to null.",
+                            request.getComputed().getTransactionId());
 
-                } else {
-                    // KURAL: Sadece Contact Policy durumu
-                    // REASON = CONTACT_POLICY (Eski davranış)
-                    ps.setString(40, CONTACT_POLICY);
-
-                    // REASON_DETAIL = Spesifik neden (DAILY_LIMIT_EXCEEDED vb.)
-                    ps.setString(41, quotaCheck);
-                }
+                } else if (quotaCheck != null && !"ok".equalsIgnoreCase(quotaCheck) && !"PROPER_TIME".equals(quotaCheck)) {
+                // YENİ KURAL: Sadece quotaCheck'te GERÇEK bir contact policy hatası varsa REASON'ı ayarla.
+                ps.setString(40, CONTACT_POLICY);
+                ps.setString(41, quotaCheck);
+                log.debug("CONTACT_POLICY case for TransactionID: {}. Setting REASON [30] to 'CONTACT_POLICY' and REASON_DETAIL [31] to '{}'.",
+                        request.getComputed().getTransactionId(), quotaCheck);
+             }
             }
         } catch (SQLException e) {
             log.error(e.getMessage());
+            log.error("SQLException during PreparedStatement setup for TransactionID: {}. Error: {}",
+                    request.getComputed().getTransactionId(), e.getMessage(), e);
         }
 
-//            if(SUCCESS.equals(status)){
-//                ps.setNull(40,java.sql.Types.VARCHAR);
-//            }else {
-//                // PROPER_TIME nedeniyle reject ise özel olarak işle
-//                String quotaCheck = request.getComputed().getQuotaCheck();
-//                if ("PROPER_TIME".equals(quotaCheck)) {
-//                    ps.setString(40, "PROPER_TIME");
-//                } else {
-//                    ps.setString(40, request.getComputed().isControlGroup() ? CONTROL_GROUP : CONTACT_POLICY);
-//                }
-//            }
-//        }catch (SQLException e){
-//            log.error(e.getMessage());
-//        }
     }
 }
 
